@@ -1,0 +1,158 @@
+---
+title: "Regression Models Project"
+output: pdf_document
+fontsize: 10pt
+geometry: margin=0.75in
+---
+```{r,results='hide',echo=FALSE}
+data(mtcars)
+library(ggplot2)
+mtcars$vs <- factor(mtcars$vs)
+mtcars$am <- factor(mtcars$am)
+```
+##Executive Summary
+In this report, we examine the `mtcars` dataset as provided by R. The `mtcars` data was extracted from the 1974 Motor Trend US magazine, and comprises fuel consumption and 10 aspects of automobile design and performance for 32 automobiles. Using linear regression models and t.test we can form some conclusions on the relationships between Miles/gallon `mtcars$mpg` and all the other variables in the dataset. In particular we will look to answer some questions in the following order:
+
+* "Is an automatic or manual transmission `mtcars$am` (0 = automatic, 1 = manual) better for MPG?"
+* "Can we quantify the MPG difference between automatic and manual transmissions?"
+* "Using the rest of the data can we come up with a feasible linear model that best explains MPG?"
+
+Based on the analysis in the report we can summarize the following:
+
+* Manual cars on average give higher MPG of **7.245** when we exclude all other variables
+* The final model using a mix of the `step()` model and intution is: $mpg_e = 30.947 + 11.555*am - 0.027*hp -2.516*wt - 3.578*wt*am$
+* Results show the possibility of one outlier in the 'Maserati Bora' model which dents the effectiveness of the above model.
+
+###Exploring the Data
+We first need to understand and clean the data before we perform any sort of linear regression. Figure 1.1 in the Appendix section shows pair graphs between all the variables. Using this plot in conjunction with `?mtcars` one can argue that some of the variables should be factorized. However, given the limited amount of observations along with the reasoning that for a varible like `cyl`, the number of cylinders can be different from observed of just 4, 6 or 8 (i.e. we can technically have 5 or 7 cylinders) then the only variables we `factorize()` are `vs` & `am` - whether engine is v-shaped (1 or 0) or whether car is automatic or manual (0 or 1) respectively.
+
+### Is an automatic or manual transmission better for MPG?
+We perform basic exploratory data analysis via a boxplot for the two different types of transmission (0 =automatic, 1 = manual). Figure 2.1 (appendix) shows that there is a significant difference in mpg between 2 types of transmissions with manual cars having a higher mean MPG over that of automatic cars. We can take this a step further by conducting a Welch Two Sample t-test below (results in appendix Figure 2.2):
+```{r, echo = TRUE}
+test <- t.test(mpg~am, data=mtcars)
+```
+We find that **`test$p.value` = `r round(test$p.value,4)`**, therefore we can reject null hyptothesis that the means are the same. Furthermore, the difference in means between the two types of transmissions is **`r round(test$estimate[2]-test$estimate[1],3)`**, and we can conclude that manual transmission has on average higher MPG.
+
+###Quantifying MPG difference between transmissions
+In order to quantify the difference in MPG between transmission and its significance we look to linearly regress `mtcars$mpg` against `mtcars$am` with the following model (results in appendix Figure 3.1):
+```{r,echo=TRUE,results='hide'}
+fit_am <- lm(mpg~am, data=mtcars)
+summary(fit_am)$coef
+```
+Although the coefficient of `am` is significant in explaining `mpg`, the R-squared is only **`r round(summary(fit_am)$r.squared,4)`**, and consequently is not enough to explain the variation in `mpg`. Therefore we have to explore the other variables in the dataset to see if we can come up with a more viable model
+
+###Model Building
+We start off by regressing MPG against all the other variables:
+```{r, echo=TRUE, results='hide'}
+fit_all <- lm(mpg~., data=mtcars)
+summary(fit_all)
+```
+From Figure 3.2 we see that by including all the variables, the **r-squared** is `r round(summary(fit_all)$r.squared,4)`, however now none of the coefficients are significant resulting in a poor model.
+
+Instead we look to build a model using the backwards `step()` function (which removes the least significant variables one by one) as a building block and then use a little bit of intuition and understanding of cars to finalize and make sense of the model
+
+```{r, echo=TRUE,results='hide'}
+fit_step <- step(fit_all)
+summary(fit_step)
+```
+Results from the `step()` algorithm show that the optimal model is: $mpg_e = b_0 + b_1*wt + + b_2* qsec + b_3*am$, with **R-squared** of `r round(summary(fit_step)$r.squared,4)` (di), however the problem with using quarter mile time (`qsec`) as a predictor is that this variable is actually an outcome of the parts that make a car rather than what explains the MPG for a particular model. So instead we substitute `qsec` with `hp` with the intuitive reasoning that higher horsepower may affect mpg, but higher horsepower usually means lower quarter mile times; this can be confirmed by looking at the correlation between the two variables which consequently is **`r round(cor(mtcars$qsec,mtcars$hp),3)`**.
+
+Now we analyze the model with `qsec` replaced: $mpg_e = b_0 + b_1*wt + + b_2* hp + b_3*am$
+```{r, echo=TRUE,results='hide'}
+fit1 <- lm(mpg ~ wt + am + hp, data = mtcars)
+summary(fit1)
+```
+Results in Fig 3.4, show a pretty good **R-squared** = `r round(summary(fit1)$r.squared,4)` and with the exception of `am` all coefficients are significant giving us a pretty good final model.
+
+###Interactions
+Before finalizing the model and reporting results, we look at the different variables for possible interactions. Fig 4.1 & Fig 4.2 are plots of `mpg` vs `wt` and `vs` respectively with transmission type in different colors. We see that there is a signficantly different slope in Fig 4.1 with the different transmission types, but not in Fig 4.2 suggestion an interaction of **$wt * am$** to explore:
+```{r, results='hide'}
+fit_final <- lm(mpg ~ am + hp + wt + wt:am, mtcars)
+summary(fit_final)
+```
+Fig 4.3 shows this model has an **R-squared** = `r round(summary(fit_final)$r.squared,4)` with all coefficients stastically significant. We can therefore conclude using `anova()` in fig 4.4 that `fit_final` is the best model given the level of significance for each additional variable:
+$$mpg_e = `r round(summary(fit_final)$coef[1],3)` + `r round(summary(fit_final)$coef[2],3)`*am `r round(summary(fit_final)$coef[3],3)`*hp `r round(summary(fit_final)$coef[4],3)`*wt`r round(summary(fit_final)$coef[5],3)`*am*wt$$
+
+* Therefore, a manual car that has weight = 1000lbs will have a higher mpg of `r round(summary(fit_final)$coef[2],3)` - `r round(summary(fit_final)$coef[5],3)` = `r round(summary(fit_final)$coef[2],3)+round(summary(fit_final)$coef[5],3)` higher mpg given same hp.
+* A manual car that weighs 5000lbs will have a lower mpg of `r round(summary(fit_final)$coef[2],3) + 5 *round(summary(fit_final)$coef[5],3)`.
+
+### Residual Plot & Diagnostics
+Fig 5.1 shows the residual plot & diagnostic:
+
+* Residual plot shows no obvious pattern
+* Q-Q plot shows for the most part that standardized residuals lie on the line.
+* Scale-Location plot shows random distribution of points.
+* Residual vs leverage for the most part has no outliers with exception of the 'Maserati Bora'. We show the influence in fig 4.4 using `dfbetas(fit_final)["Maserati Bora",1]`. This unfortunately shows some weakness in the model.
+
+
+#Appendix
+
+```{r}
+pairs(mtcars,  main="Fig 1.1: Pair Graph of mtcars")
+```  
+
+```{r}
+boxplot(mpg~am, data=mtcars,xlab="Transmission, 0 = Automatic, 1 = Manual", ylab="Miles/Gallon",
+        main=" Fig 2.1 MPG v Transmission")
+```  
+
+##Figure 2.2
+```{r, echo = TRUE}
+t.test(mpg~am, data=mtcars)
+```
+
+##Figure 3.1
+```{r, echo = TRUE}
+fit_am <- lm(mpg ~ am, data=mtcars)
+summary(fit_am)$coef
+```
+
+##Figure 3.2
+```{r, echo=FALSE}
+fit_all <- lm(mpg ~ ., data=mtcars)
+summary(fit_all)$coef
+```
+
+##Figure 3.3
+```{r,results='hide'}
+fit_step <- step(fit_all)
+```
+
+```{r}
+summary(fit_step)$coef
+```
+
+##Figure 3.4
+```{r, echo=FALSE}
+fit1 <- lm(mpg ~ wt + am + hp, data = mtcars)
+summary(fit1)
+```
+
+```{r}
+g1 <- ggplot(data=mtcars, aes(x=wt, y=mpg, colour=am)) + geom_point() + stat_smooth(method="lm") + labs(title="Fig 4.1: Interaction am vs wt") + theme_bw() 
+g1
+```
+
+```{r}
+g1 <- ggplot(data=mtcars, aes(x=hp, y=mpg, colour=am)) + 
+geom_point() + stat_smooth(method="lm") + labs(title="Fig 4.2: Interaction am vs hp") + theme_bw()
+g1
+```
+
+###Figure 4.3
+```{r, echo=FALSE}
+fit_final <- lm(mpg ~ am + hp + wt + wt:am, mtcars)
+summary(fit_final)$coef
+```
+###Figure 4.4
+```{r,echo=TRUE}
+anova(fit_am, fit1, fit_final)
+dfbetas(fit_final)["Maserati Bora",1]
+
+```
+
+```{r, echo=FALSE}
+par(mfrow = c(2, 2))
+plot(fit_final, main = "Fig 5.1")
+```
+
